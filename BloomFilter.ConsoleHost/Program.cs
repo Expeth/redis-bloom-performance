@@ -2,7 +2,11 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reactive;
 using System.Threading.Tasks;
+using Ductus.FluentDocker.Builders;
+using NBomber.Contracts;
+using NBomber.CSharp;
 using RedisBloom.Extensions;
 using StackExchange.Redis;
 
@@ -12,63 +16,56 @@ namespace BloomFilter.ConsoleHost
     {
         static async Task Main(string[] args)
         {
+            using var container = new Builder()
+                .UseContainer()
+                .UseImage("redislabs/rebloom:latest")
+                .WithName("redis-bloom")
+                .ExposePort(6379, 6379)
+                .Build()
+                .Start();
+
+            var setName = "test";
+            var errorRate = 0.0001;
+            var capacity = 50_000_000;
+            
             var conn = await ConnectionMultiplexer.ConnectAsync("127.0.0.1");
             var db = conn.GetDatabase(0);
 
+            await db.ReserveAsync(setName, errorRate, capacity);
 
-            //await CheckErrorRate(db);
-            await GenerateGuids("guids.txt", 1000000);
-            await WriteGuids(db, "guids.txt");
-
-            // Console.WriteLine(await db.ExistsAsync("1"));
-        }
-
-        static async Task GenerateGuids(string filename, int size)
-        {
-            var guids = new List<string>();
-
-            for (int i = 0; i < size; i++)
+            var insertGuidsStep = Step.Create("insert-guids", async context =>
             {
-                guids.Add(Guid.NewGuid().ToString());
-            }
-            
-            await File.WriteAllLinesAsync(filename, guids);
-        }
+                var guid = Guid.NewGuid().ToString();
+                await db.AddAsync(setName, guid);
+               
+                return Response.Ok();
+            });
 
-        static async Task WriteGuids(IDatabaseAsync db, string filename)
-        {
-            var guids = await File.ReadAllLinesAsync(filename);
-            
-            foreach (var guid in guids)
+            var checkExistenceStep = Step.Create("check-existence", async context =>
             {
-                await db.AddAsync(guid);
-            }
-        }
+                var guid = Guid.NewGuid().ToString();
+                var isExists = await db.ExistsAsync(setName, guid);
+               
+                return isExists ? Response.Fail() : Response.Ok();
+            });
 
-        static async Task CheckErrorRate(IDatabaseAsync db)
-        {
-            var errors = 0;
-            var size = 10000;
+            var insertionScenario = ScenarioBuilder
+                .CreateScenario("insertion-scenario", insertGuidsStep)
+                .WithWarmUpDuration(TimeSpan.FromMinutes(2))
+                .WithLoadSimulations(LoadSimulation.NewKeepConstant(100, TimeSpan.FromMinutes(3)));
+
+            var checkExistenceScenario = ScenarioBuilder
+                .CreateScenario("check-existence-scenario", checkExistenceStep)
+                .WithoutWarmUp()
+                .WithLoadSimulations(LoadSimulation.NewKeepConstant(200, TimeSpan.FromMinutes(3)));
             
-            await GenerateGuids("fake-guids.txt", size);
-            var guids = await File.ReadAllLinesAsync("fake-guids.txt");
-
-            var timer = new Stopwatch();
-            timer.Start();
-            foreach (var guid in guids)
-            {
-                var isExist = await db.ExistsAsync(guid);
-                if (isExist)
-                {
-                    //Console.WriteLine($"This GUID already exists - {fakeGuid}");
-                    errors++;
-                }
-            }
-            timer.Stop();
-
-            Console.WriteLine($"Elapsed ms - {timer.ElapsedMilliseconds}ms");
-            Console.WriteLine($"Errors found - {errors}");
-            Console.WriteLine($"Error rate - {(double)size / (size - errors)}");
+            NBomberRunner
+                .RegisterScenarios
+                (
+                    insertionScenario,
+                    checkExistenceScenario
+                )
+                .Run();
         }
     }
 }
