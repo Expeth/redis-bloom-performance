@@ -2,6 +2,7 @@
 using System.Net;
 using System.Threading.Tasks;
 using Ductus.FluentDocker.Builders;
+using Ductus.FluentDocker.Services;
 using Microsoft.Extensions.Configuration;
 using RedisBloom.Extensions;
 using RedisBloom.LoadTests.Common;
@@ -11,7 +12,7 @@ namespace RedisBloom.LoadTests
 {
     public abstract class BaseTest : IDisposable
     {
-        protected static readonly IDisposable RedisContainer;
+        protected static readonly IContainerService RedisContainer;
         protected static readonly IDatabaseAsync Database;
         protected static readonly IConfiguration Configuration;
         protected static readonly BloomFilterCfg BloomFilterCfg;

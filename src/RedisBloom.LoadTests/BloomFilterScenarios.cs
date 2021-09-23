@@ -26,16 +26,16 @@ namespace RedisBloom.LoadTests
 
             return Response.Ok();
         });
-        
-        private static Scenario InsertionScenario => ScenarioBuilder
+
+        private static Scenario InsertionScenario(int threads, TimeSpan duration) => ScenarioBuilder
             .CreateScenario("insertion-scenario", InsertGuidsStep)
-            .WithWarmUpDuration(TimeSpan.FromMinutes(1))
-            .WithLoadSimulations(LoadSimulation.NewKeepConstant(20, TimeSpan.FromSeconds(1)));
+            .WithLoadSimulations(LoadSimulation.NewKeepConstant(threads, duration))
+            .WithoutWarmUp();
         
-        private static Scenario CheckExistenceScenario => ScenarioBuilder
+        private static Scenario CheckExistenceScenario(int threads, TimeSpan duration) => ScenarioBuilder
             .CreateScenario("check-existence-scenario", CheckExistenceStep)
-            .WithoutWarmUp()
-            .WithLoadSimulations(LoadSimulation.NewKeepConstant(20, TimeSpan.FromMinutes(1)));
+            .WithLoadSimulations(LoadSimulation.NewKeepConstant(threads, duration))
+            .WithoutWarmUp();
 
         [SetUp]
         public async Task SetUpAsync()
@@ -44,16 +44,62 @@ namespace RedisBloom.LoadTests
         }
         
         [Test]
-        public async Task InsertionWithCheckExistenceScenario()
+        public async Task Insertion_And_CheckExistence_Simultaneously_Scenario()
         {
             NBomberRunner
                 .RegisterScenarios
                 (
-                    InsertionScenario,
-                    CheckExistenceScenario
+                    InsertionScenario(200, TimeSpan.FromSeconds(5)),
+                    CheckExistenceScenario(200, TimeSpan.FromSeconds(5))
                 )
                 .Run();
 
+            await PrintDebugInfoAsync();
+        }
+        
+        [Test]
+        public async Task Insertion_Then_CheckExistence_Sequentially_Scenario()
+        {
+            NBomberRunner
+                .RegisterScenarios
+                (
+                    InsertionScenario(200, TimeSpan.FromMinutes(10))
+                )
+                .Run();
+            
+            NBomberRunner
+                .RegisterScenarios
+                (
+                    CheckExistenceScenario(200, TimeSpan.FromMinutes(5))
+                )
+                .Run();
+
+            await PrintDebugInfoAsync();
+        }
+        
+        [Test]
+        public async Task Insertion_Then_Insertion_And_CheckExistence_Sequentially_Scenario()
+        {
+            NBomberRunner
+                .RegisterScenarios
+                (
+                    InsertionScenario(200, TimeSpan.FromMinutes(15))
+                )
+                .Run();
+            
+            NBomberRunner
+                .RegisterScenarios
+                (
+                    InsertionScenario(5, TimeSpan.FromMinutes(20)),
+                    CheckExistenceScenario(300, TimeSpan.FromMinutes(20))
+                )
+                .Run();
+
+            await PrintDebugInfoAsync();
+        }
+
+        private async Task PrintDebugInfoAsync()
+        {
             var debugInfo = await Database.DebugInfoFromBloomFilterAsync(BloomFilterCfg.Name);
             Console.WriteLine($"\n\n> BF.DEBUG {BloomFilterCfg.Name} \n{debugInfo}");
         }
