@@ -405,7 +405,8 @@ Then, simply build and run the needed tests from Rider or VisualStudio. The resu
 
 * [.Net 5.0](https://dotnet.microsoft.com/download/dotnet/5.0) - Platform
 * [NBomber](https://github.com/PragmaticFlow/NBomber) - Load testing
-* [FluentDocker](https://github.com/nunit/nunit) - Unit-testing framework
+* [FluentDocker](https://github.com/mariotoffia/FluentDocker) - Used to run Docker container with Redis Bloom
+* [NUnit](https://github.com/nunit/nunit) - Unit-testing framework
 
 ## Authors
 
